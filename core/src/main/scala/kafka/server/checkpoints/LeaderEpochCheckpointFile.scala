@@ -30,12 +30,16 @@ trait LeaderEpochCheckpoint {
 }
 
 object LeaderEpochCheckpointFile {
+
+  // 之前写代码连文件名都要可配置，其实根本没有用，固化的一般作为类的私有属性更方便，容易变化的应该由调用者传递下来
   private val LeaderEpochCheckpointFilename = "leader-epoch-checkpoint"
   private val WhiteSpacesPattern = Pattern.compile("\\s+")
   private val CurrentVersion = 0
 
   def newFile(dir: File): File = new File(dir, LeaderEpochCheckpointFilename)
 
+  // 实现对应的formatter
+  //epoch?
   object Formatter extends CheckpointFileFormatter[EpochEntry] {
 
     override def toLine(entry: EpochEntry): String = s"${entry.epoch} ${entry.startOffset}"

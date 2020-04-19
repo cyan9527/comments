@@ -25,8 +25,13 @@ import kafka.utils.Logging
 import org.apache.kafka.common.errors.KafkaStorageException
 import org.apache.kafka.common.utils.Utils
 
+// Seq是trait
 import scala.collection.{Seq, mutable}
 
+
+// 这里封装的是文件的读写部分和需要的formatter的抽象，使用者要自己实现formatter，通过传参进行耦合起来，耦合度小
+
+// fomatter模板
 trait CheckpointFileFormatter[T]{
   def toLine(entry: T): String
 
@@ -37,7 +42,11 @@ class CheckpointReadBuffer[T](location: String,
                               reader: BufferedReader,
                               version: Int,
                               formatter: CheckpointFileFormatter[T]) extends Logging {
+
   def read(): Seq[T] = {
+    // 第一行是版本,第二行是预期的大小，第三行开始buffer数据，和预期大小不对会报错, 最后返回读取的buffer
+    // 要跟一下这里的version
+
     def malformedLineException(line: String) =
       new IOException(s"Malformed line in checkpoint file ($location): '$line'")
 
@@ -84,16 +93,20 @@ class CheckpointFile[T](val file: File,
   private val tempPath = Paths.get(path.toString + ".tmp")
   private val lock = new Object()
 
+  // 如果文件没有，一开始先创建好目标文件
   try Files.createFile(file.toPath) // create the file if it doesn't exist
   catch { case _: FileAlreadyExistsException => }
 
   def write(entries: Iterable[T]): Unit = {
+
+    // 上锁,防止读写冲突，然后采用 write-fsync-rename 方案
     lock synchronized {
       try {
         // write to temp file and then swap with the existing file
         val fileOutputStream = new FileOutputStream(tempPath.toFile)
         val writer = new BufferedWriter(new OutputStreamWriter(fileOutputStream, StandardCharsets.UTF_8))
         try {
+          // 同样第一行是版本,第二行是预期的大小，第三行开始buffer数据
           writer.write(version.toString)
           writer.newLine()
 

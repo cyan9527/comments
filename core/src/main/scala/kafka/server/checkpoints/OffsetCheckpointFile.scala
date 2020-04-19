@@ -25,6 +25,14 @@ import org.apache.kafka.common.TopicPartition
 
 import scala.collection._
 
+/**
+ * 类关系
+ * LazyOffsetCheckpoints 关联 LazyOffsetCheckpointMap
+ * LazyOffsetCheckpoints 依赖 OffsetCheckpointFile
+ * OffsetCheckpointFile 依赖 CheckpointFile
+ */
+
+
 object OffsetCheckpointFile {
   private val WhiteSpacesPattern = Pattern.compile("\\s+")
   private[checkpoints] val CurrentVersion = 0
@@ -37,6 +45,7 @@ object OffsetCheckpointFile {
     override def fromLine(line: String): Option[(TopicPartition, Long)] = {
       WhiteSpacesPattern.split(line) match {
         case Array(topic, partition, offset) =>
+          // ?
           Some(new TopicPartition(topic, partition.toInt), offset.toLong)
         case _ => None
       }
@@ -44,6 +53,7 @@ object OffsetCheckpointFile {
   }
 }
 
+// 未找到用途
 trait OffsetCheckpoint {
   def write(epochs: Seq[EpochEntry]): Unit
   def read(): Seq[EpochEntry]
@@ -52,6 +62,8 @@ trait OffsetCheckpoint {
 /**
   * This class persists a map of (Partition => Offsets) to a file (for a certain replica)
   */
+// 持久化单个副本的partition到offset的map
+// 通过入参的方式耦合 CheckpointFile
 class OffsetCheckpointFile(val file: File, logDirFailureChannel: LogDirFailureChannel = null) {
   val checkpoint = new CheckpointFile[(TopicPartition, Long)](file, OffsetCheckpointFile.CurrentVersion,
     OffsetCheckpointFile.Formatter, logDirFailureChannel, file.getParent)
@@ -69,6 +81,8 @@ trait OffsetCheckpoints {
 /**
  * Loads checkpoint files on demand and caches the offsets for reuse.
  */
+// 未清楚用途
+// 通过入参的方式耦合 OffsetCheckpointFile
 class LazyOffsetCheckpoints(checkpointsByLogDir: Map[String, OffsetCheckpointFile]) extends OffsetCheckpoints {
   private val lazyCheckpointsByLogDir = checkpointsByLogDir.map { case (logDir, checkpointFile) =>
     logDir -> new LazyOffsetCheckpointMap(checkpointFile)
