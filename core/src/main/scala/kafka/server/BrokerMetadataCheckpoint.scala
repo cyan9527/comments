@@ -24,6 +24,8 @@ import java.util.Properties
 import kafka.utils._
 import org.apache.kafka.common.utils.Utils
 
+
+// case 类，基于入参默认实现了hashCode
 case class BrokerMetadata(brokerId: Int,
                           clusterId: Option[String]) {
 
@@ -34,6 +36,9 @@ case class BrokerMetadata(brokerId: Int,
 
 /**
   * This class saves broker's metadata to a file
+  * 保存broker的metadata到文件
+  * 同样采用write-fsync-rename的方式
+  * 其实这个方式在CheckpointFile类中也是有的
   */
 class BrokerMetadataCheckpoint(val file: File) extends Logging {
   private val lock = new Object()
@@ -44,6 +49,8 @@ class BrokerMetadataCheckpoint(val file: File) extends Logging {
         val brokerMetaProps = new Properties()
         brokerMetaProps.setProperty("version", 0.toString)
         brokerMetaProps.setProperty("broker.id", brokerMetadata.brokerId.toString)
+
+        // clusterId是Option[string]类型要用foreach来历遍，但实际只有一个
         brokerMetadata.clusterId.foreach { clusterId =>
           brokerMetaProps.setProperty("cluster.id", clusterId)
         }
@@ -66,6 +73,8 @@ class BrokerMetadataCheckpoint(val file: File) extends Logging {
   }
 
   def read(): Option[BrokerMetadata] = {
+
+    // 读取的时候尝试做一次tmp文件的清理
     Files.deleteIfExists(new File(file.getPath + ".tmp").toPath()) // try to delete any existing temp files for cleanliness
 
     lock synchronized {

@@ -172,6 +172,9 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
   val zkClientConfig: ZKClientConfig = KafkaServer.zkClientConfigFromKafkaConfig(config).getOrElse(new ZKClientConfig())
   private var _zkClient: KafkaZkClient = null
   val correlationId: AtomicInteger = new AtomicInteger(0)
+
+  // Broker的metadata存放在logDir/meta.properties中，主要保存了brokerId和clusterId
+  // 这里根据logDirs获取了对应的读写类（BrokerMetadataCheckpoint完成数据到文件之间的读写）并放在map中
   val brokerMetaPropsFile = "meta.properties"
   val brokerMetadataCheckpoints = config.logDirs.map(logDir => (logDir, new BrokerMetadataCheckpoint(new File(logDir + File.separator + brokerMetaPropsFile)))).toMap
 
@@ -205,6 +208,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
 
       val canStartup = isStartingUp.compareAndSet(false, true)
       if (canStartup) {
+        // brokerState进入Starting状态
         brokerState.newState(Starting)
 
         /* setup zookeeper */
@@ -257,6 +261,8 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
         logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size)
 
         /* start log manager */
+        // config 在kafa来源于server.properties
+        // intialOfflineDirs
         logManager = LogManager(config, initialOfflineDirs, zkClient, brokerState, kafkaScheduler, time, brokerTopicStats, logDirFailureChannel)
         logManager.startup()
 
@@ -416,6 +422,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
   }
 
   private def getOrGenerateClusterId(zkClient: KafkaZkClient): String = {
+    // 从zk中获取cluster id， 如果没有就，生成一个uuid并转base64
     zkClient.getClusterId.getOrElse(zkClient.createOrGetClusterId(CoreUtils.generateUuidAsBase64))
   }
 
@@ -724,11 +731,15 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
         }
       } catch {
         case e: IOException =>
+          // 没有文件不会报IOerror的
+          // 如果IO失败都归类到offlineDirs中
           offlineDirs += logDir
           error(s"Fail to read $brokerMetaPropsFile under log directory $logDir", e)
       }
     }
 
+    // Set去重，理论上一个broker的metadata只可能有一个，正如InconsistentBrokerMetadataException所说的：可能出现了多个borker共享了一个log.dir（比如单机多broker实例）
+    // 或者一部分的数据被人为地复制到了另一个broker中
     if (brokerMetadataSet.size > 1) {
       val builder = new StringBuilder
 
@@ -740,8 +751,10 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
         s"or partial data was manually copied from another broker. Found:\n${builder.toString()}"
       )
     } else if (brokerMetadataSet.size == 1)
+      // 最正常的情况
       (brokerMetadataSet.last, offlineDirs)
     else
+      // 如果没有，那么需要生成一个新的
       (BrokerMetadata(-1, None), offlineDirs)
   }
 

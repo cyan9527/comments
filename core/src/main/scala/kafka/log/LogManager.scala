@@ -39,11 +39,18 @@ import scala.util.{Failure, Success, Try}
  * The entry point to the kafka log management subsystem. The log manager is responsible for log creation, retrieval, and cleaning.
  * All read and write operations are delegated to the individual log instances.
  *
+ * kafka日志管理子系统入口。 日志管理负责日志的创建，获取，清理，所有的读写操作都针对一个独立的日志实例
+ *
  * The log manager maintains logs in one or more directories. New logs are created in the data directory
  * with the fewest logs. No attempt is made to move partitions after the fact or balance based on
  * size or I/O rate.
  *
+ * 日志管理在一个或多个目录上维护日志。新日志将创建在日志最少的数据目录上（log对象），
+ * 在平衡或实例上，不会尝试根据大小或IO速率去移动partition
+ *
  * A background thread handles log retention by periodically truncating excess log segments.
+ *
+ * 一个后台线程处理通过周期截断超过范围的日志段来控制日志大小（log retention）
  */
 @threadsafe
 class LogManager(logDirs: Seq[File],
@@ -73,8 +80,12 @@ class LogManager(logDirs: Seq[File],
   // Future logs are put in the directory with "-future" suffix. Future log is created when user wants to move replica
   // from one log directory to another log directory on the same broker. The directory of the future log will be renamed
   // to replace the current log of the partition after the future log catches up with the current log
+  // 未来日志会放在一个带-future的后缀目录里，当用户想要在同一个broker里,
+  // 把replica从一个log目录移动到到另一个日志目录时会创建未来日志
+  // 未来日志一旦追赶上了当前日志，那么未来日志的目录将会通过重命名来替换掉分区的当前日志
   private val futureLogs = new Pool[TopicPartition, Log]()
   // Each element in the queue contains the log object to be deleted and the time it is scheduled for deletion.
+  // 每个在队列里面的元素都包含了待删除的日志对象和会被调度删除的时间
   private val logsToBeDeleted = new LinkedBlockingQueue[(Log, Long)]()
 
   private val _liveLogDirs: ConcurrentLinkedQueue[File] = createAndValidateLogDirs(logDirs, initialOfflineDirs)
@@ -86,6 +97,10 @@ class LogManager(logDirs: Seq[File],
   // which triggers a config reload after initialization is finished (to get the latest config value).
   // See KAFKA-8813 for more detail on the race condition
   // Visible for testing
+  // map表，包含了全部正在被加载或初始化的日志的partitions。 如果这些partitions的log配置刚好被修改，那么在map里对应的实例会被设置为true
+  // 当初始化完成，将触发配置的重新加载
+  // 有关条件竞争问题，详情请看KAFKA-8813
+
   private[log] val partitionsInitializing = new ConcurrentHashMap[TopicPartition, Boolean]().asScala
 
   def reconfigureDefaultLogConfig(logConfig: LogConfig): Unit = {
