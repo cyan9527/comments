@@ -215,6 +215,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
         initZkClient(time)
 
         /* Get or create cluster_id */
+        // 生成或者从zk中获取cluster_id，cluster_id是由kafka生成并注册到zk中的
         _clusterId = getOrGenerateClusterId(zkClient)
         info(s"Cluster ID = $clusterId")
 
@@ -222,6 +223,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
         val (preloadedBrokerMetadataCheckpoint, initialOfflineDirs) = getBrokerMetadataAndOfflineDirs
 
         /* check cluster id */
+        // 如果从文件获取到了clustertId（isDefined）或者clusterId不相等，那么上报ClusterID不一致的错误
         if (preloadedBrokerMetadataCheckpoint.clusterId.isDefined && preloadedBrokerMetadataCheckpoint.clusterId.get != clusterId)
           throw new InconsistentClusterIdException(
             s"The Cluster ID ${clusterId} doesn't match stored clusterId ${preloadedBrokerMetadataCheckpoint.clusterId} in meta.properties. " +
@@ -422,7 +424,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
   }
 
   private def getOrGenerateClusterId(zkClient: KafkaZkClient): String = {
-    // 从zk中获取cluster id， 如果没有就，生成一个uuid并转base64
+    // 从zk中获取cluster id， 如果没有就生成一个uuid并转base64
     zkClient.getClusterId.getOrElse(zkClient.createOrGetClusterId(CoreUtils.generateUuidAsBase64))
   }
 
@@ -783,12 +785,14 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
    */
   private def getOrGenerateBrokerId(brokerMetadata: BrokerMetadata): Int = {
     val brokerId = config.brokerId
-
+    // 如果配置的brokerid和保存到文件里的（metadata）中的brokerid不一致，上报异常
     if (brokerId >= 0 && brokerMetadata.brokerId >= 0 && brokerMetadata.brokerId != brokerId)
       throw new InconsistentBrokerIdException(
         s"Configured broker.id $brokerId doesn't match stored broker.id ${brokerMetadata.brokerId} in meta.properties. " +
         s"If you moved your data, make sure your configured broker.id matches. " +
         s"If you intend to create a new broker, you should remove all data in your data directories (log.dirs).")
+    // 新生成的metadata的brokerid是-1，brokerID没有配置也是小于0，这里只都没有brokerId时，又打开了brokerIdGenerationEnabl
+    // 那么生成一个brokerID
     else if (brokerMetadata.brokerId < 0 && brokerId < 0 && config.brokerIdGenerationEnable) // generate a new brokerId from Zookeeper
       generateBrokerId
     else if (brokerMetadata.brokerId >= 0) // pick broker.id from meta.properties
