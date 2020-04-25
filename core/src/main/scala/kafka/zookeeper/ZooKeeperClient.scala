@@ -39,6 +39,10 @@ import scala.jdk.CollectionConverters._
 import scala.collection.Seq
 import scala.collection.mutable.Set
 
+// 封装了zookeeper操作，提供了管道式的request，response和操作封装
+// 这里最重要的工作是把请求给管道化，顺序化，同时把多个请求给事务化，防止多个模块之间请求相互冲突
+// 以往开发的时候很少做这种封装, 
+
 /**
  * A ZooKeeper client that encourages pipelined requests.
  *

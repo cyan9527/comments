@@ -425,6 +425,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
 
   private def getOrGenerateClusterId(zkClient: KafkaZkClient): String = {
     // 从zk中获取cluster id， 如果没有就生成一个uuid并转base64
+    // getClusterId
     zkClient.getClusterId.getOrElse(zkClient.createOrGetClusterId(CoreUtils.generateUuidAsBase64))
   }
 

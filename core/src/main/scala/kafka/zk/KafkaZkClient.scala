@@ -45,10 +45,16 @@ import scala.collection.{Map, Seq, mutable}
 /**
  * Provides higher level Kafka-specific operations on top of the pipelined [[kafka.zookeeper.ZooKeeperClient]].
  *
+ * 通过管道。在kafka.zookeeper.ZooKeeperClient上提供高层的，针对kafka的操作集
+ *
  * Implementation note: this class includes methods for various components (Controller, Configs, Old Consumer, etc.)
  * and returns instances of classes from the calling packages in some cases. This is not ideal, but it made it
  * easier to migrate away from `ZkUtils` (since removed). We should revisit this. We should also consider whether a
  * monolithic [[kafka.zk.ZkData]] is the way to go.
+ *
+ * 备注：这个类的方法覆盖了多个类型的组件，如控制器，配置，旧版的消费者等等，通过调用包（calling packages）返回类的实例（cases类）
+ * 这不是一个理想的方式，但是这样很容易从ZkUtils(已经删除了)迁移过来，我们应该回过头来看看它，考虑一下集成一体是否是个好路子
+ *
  */
 class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boolean, time: Time) extends AutoCloseable with
   Logging with KafkaMetricsGroup {
@@ -1678,6 +1684,9 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     retryRequestsUntilConnected(Seq(request), expectedControllerZkVersion).head
   }
 
+  // retryRequestsUntilConnected 关键的和zk通信的入口函数，多态，支持单个request入参和附带期望的zk版本
+  // 如果指定了版本，那么会吗requests做一次
+
   private def retryRequestsUntilConnected[Req <: AsyncRequest](requests: Seq[Req], expectedControllerZkVersion: Int): Seq[Req#Response] = {
     expectedControllerZkVersion match {
       case ZkVersion.MatchAnyVersion => retryRequestsUntilConnected(requests)
@@ -1868,6 +1877,8 @@ object KafkaZkClient {
   // A helper function to transform a regular request into a MultiRequest
   // with the check on controller epoch znode zkVersion.
   // This is used for fencing zookeeper updates in controller.
+  // 辅助方法，通过检查控制器中的epoch znode zkVersion，将一个常规的request转换成MultiRequest
+  // 这个用来给绕开kafka控制器在zookeeper上的更新
   private def wrapRequestWithControllerEpochCheck(request: AsyncRequest, expectedControllerZkVersion: Int): MultiRequest = {
       val checkOp = CheckOp(ControllerEpochZNode.path, expectedControllerZkVersion)
       request match {
