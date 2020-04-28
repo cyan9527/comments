@@ -39,9 +39,18 @@ import scala.jdk.CollectionConverters._
 import scala.collection.Seq
 import scala.collection.mutable.Set
 
-// 封装了zookeeper操作，提供了管道式的request，response和操作封装
-// 这里最重要的工作是把请求给管道化，顺序化，同时把多个请求给事务化，防止多个模块之间请求相互冲突
-// 以往开发的时候很少做这种封装, 
+/**
+ * 封装了java zookeeper原生提供的操作集，具体如下：
+ * 1、将org.apache.zookeeper的op和一些操作都重新封装成了不同的request和response类型
+ *
+ * 2、提供管道化的handlerequest，防止多个模块之间请求相互冲突，保证了请求的事务，在我看来，是这个封装最重要的功能了
+ * handlerequests是主要入口，加锁，顺序调用了send，根据不同的request类型调用对应的zookeeper方法。
+ *
+ * 3、将org.apache.zookeeper回调封装了，通过回调：将返回的节点handler保存在hash中，超时则触发KafkaScheduler进行reinited等
+ *
+ * 4、通过线程池KafkaScheduler来完成reinited操作
+ *
+ */
 
 /**
  * A ZooKeeper client that encourages pipelined requests.
@@ -249,6 +258,9 @@ class ZooKeeperClient(connectString: String,
 
   /**
    * Wait indefinitely until the underlying zookeeper client to reaches the CONNECTED state.
+   *
+   * 无限等待直到zookeeperclient编程连接状态，由于默认用了long的最大值作为超时时间，可以看作不会超时了
+   *
    * @throws ZooKeeperClientAuthFailedException if the authentication failed either before or while waiting for connection.
    * @throws ZooKeeperClientExpiredException if the session expired either before or while waiting for connection.
    */
@@ -288,8 +300,12 @@ class ZooKeeperClient(connectString: String,
   /**
    * Register the handler to ZooKeeperClient. This is just a local operation. This does not actually register a watcher.
    *
+   * 注册一个handler到zookeeperclient中。这个只是一个本地的操作。它其实不是真实去注册一个wathcer
+   *
    * The watcher is only registered once the user calls handle(AsyncRequest) or handle(Seq[AsyncRequest])
    * with either a GetDataRequest or ExistsRequest.
+   *
+   * 这个watcher只有在用户调用GetDataRequest和ExistsRequest时才会被注册一次
    *
    * NOTE: zookeeper only allows registration to a nonexistent znode with ExistsRequest.
    *
@@ -431,6 +447,7 @@ class ZooKeeperClient(connectString: String,
   }
 
   // package level visibility for testing only
+  // 下层zookeeper连接时，回调该对象的方法
   private[zookeeper] object ZooKeeperClientWatcher extends Watcher {
     override def process(event: WatchedEvent): Unit = {
       debug(s"Received event: $event")
