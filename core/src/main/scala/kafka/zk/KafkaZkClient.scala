@@ -43,6 +43,11 @@ import org.apache.zookeeper.{CreateMode, KeeperException, ZooKeeper}
 import scala.collection.{Map, Seq, mutable}
 
 /**
+ *
+ *
+ */
+
+/**
  * Provides higher level Kafka-specific operations on top of the pipelined [[kafka.zookeeper.ZooKeeperClient]].
  *
  * 通过管道。在kafka.zookeeper.ZooKeeperClient上提供高层的，针对kafka的操作集
@@ -74,11 +79,27 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
   // updates of the session id. It is possible that the session id changes over the time for 'Session expired'.
   // This code is part of the work around done in the KAFKA-7165, once ZOOKEEPER-2985 is complete, this code must
   // be deleted.
+  // 当broker注册到zookeeper以及session id的后序更新，这个变量会保存zookeeper session id。
+  // sesion id 的变更在Session到期之后是有可能的。
+
+
+  // kafka-7165:
+  // In case the ZooKeeper session has been regenerated and the broker
+  // tries to register the BrokerInfo into Zookeeper, this code deletes
+  // the current BrokerInfo from Zookeeper and creates it again, just if
+  // the znode ephemeral owner belongs to the Broker which tries to register
+  // himself again into ZooKeeper
+  // 当zookeeper session已经被重新生成时，broker尝试注册broker信息到zookeeper中，这将导致当前的zookeeper brokerinfo被删除
+  // 并再次创建一次，就好像znode临时节点的拥有者Broker再次在zookeeper中注册他自己一样。
+
+
   private var currentZooKeeperSessionId: Long = -1
 
   /**
    * Create a sequential persistent path. That is, the znode will not be automatically deleted upon client's disconnect
    * and a monotonically increasing number will be appended to its name.
+   *
+   * 创建一个顺序的持久化路径，即当client断开时znode不会自动删除，并且一个单调递增的数字将会追加到它的名字上
    *
    * @param path the path to create (with the monotonically increasing number appended)
    * @param data the znode data
@@ -93,6 +114,8 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
 
   /**
     * Registers the broker in zookeeper and return the broker epoch.
+   *  注册broker到zookeeper中，并且返回broker的epoch数（创建znode的事务id作为epoch）
+   *
     * @param brokerInfo payload of the broker znode
     * @return broker epoch (znode create transaction id)
     */
@@ -1728,6 +1751,7 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     responses
   }
 
+  // 创建临时节点
   private def checkedEphemeralCreate(path: String, data: Array[Byte]): Stat = {
     val checkedEphemeral = new CheckedEphemeral(path, data)
     info(s"Creating $path (is it secure? $isSecure)")
@@ -1752,6 +1776,26 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
     currentZooKeeperSessionId = newSessionId
   }
 
+
+  // At this point, the Zookeeper session could be different (due a 'Session expired') from the one that initially
+  // registered the Broker into the Zookeeper ephemeral node, but the znode is still present in ZooKeeper.
+  // The expected behaviour is that Zookeeper server removes the ephemeral node associated with the expired session
+  // but due an already reported bug in Zookeeper (ZOOKEEPER-2985) this is not happening, so, the following check
+  // will validate if this Broker got registered with the previous (expired) session and try to register again,
+  // deleting the ephemeral node and creating it again.
+
+  /**
+   * 关键流程：
+   * 1、创建一个临时节点，主要入口create方法
+   * 2、如果临时节点已经被创建了，那么检查是不是同一个会话内
+   * 3、如果不属于同一个会话，那么先删除之前的零时节点并再次创建
+   *
+   * 这个类是为了解决KAFKA-7165问题:
+   * 当broker注册到zookeeper的临时节点时，由于session有失效时间，zookeeper的session有可能会不同，但是znode却会依旧在zookeeper中，这是
+   * zookeeper中的一个BUG，本来预期的行为应该是zookeeper server在会话过期的时候删除相关的临时节点。
+   * 为了解决这个问题，broker注册时会检查会话是否已经过期，如果是那么重新注册一次，删除掉临时节点并重新创建节点
+   *
+   */
   private class CheckedEphemeral(path: String, data: Array[Byte]) extends Logging {
     def create(): Stat = {
       val response = retryRequestUntilConnected(
@@ -1775,6 +1819,10 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
       // This is assuming the 'retryRequestUntilConnected' method got connected and a valid session id is present.
       // This code is part of the workaround done in the KAFKA-7165, once ZOOKEEPER-2985 is complete, this code
       // must be deleted.
+
+      // 在这点上，我们需要保存一个zookeeper的session id作为参考值
+      // 要在这里保存是由于zookeeper session id可能在对象创建时上还没有生效
+      // 这个假设retryRequestUntilConnected方法已经连接并有一个有效的session id
       updateCurrentZKSessionId(zooKeeperClient.sessionId)
 
       stat
