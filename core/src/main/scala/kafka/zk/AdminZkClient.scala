@@ -34,11 +34,16 @@ import scala.collection.{Map, Seq}
 /**
  * Provides admin related methods for interacting with ZooKeeper.
  *
+ * 提供admin相关的方法来和zookeeper交互
+ *
  * This is an internal class and no compatibility guarantees are provided,
  * see org.apache.kafka.clients.admin.AdminClient for publicly supported APIs.
+ *
+ * 这是一个内部类并且没有兼容保证
+ * 看 org.apache.kafka.clients.admin.AdminClient 来了解公开支持的APIs
+ *
  */
 class AdminZkClient(zkClient: KafkaZkClient) extends Logging {
-
   /**
    * Creates the topic with given configuration
    * @param topic topic name to create

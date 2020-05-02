@@ -43,8 +43,8 @@ import org.apache.zookeeper.{CreateMode, KeeperException, ZooKeeper}
 import scala.collection.{Map, Seq, mutable}
 
 /**
- *
- *
+ * 封装了kafka对zookeeper的操作
+ * 提供了针对性方法
  */
 
 /**
@@ -128,6 +128,8 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
 
   /**
    * Registers a given broker in zookeeper as the controller and increments controller epoch.
+   * 注册一个给定的broker到zookeeper中作为controller并且增加controller epoch
+   *
    * @param controllerId the id of the broker that is to be registered as the controller.
    * @return the (updated controller epoch, epoch zkVersion) tuple
    * @throws ControllerMovedException if fail to create /controller or fail to increment controller epoch.
@@ -159,6 +161,9 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
         // is associated with the current broker during controller election because we already knew that the zk
         // transaction succeeds based on the controller znode verification. Other rounds of controller
         // election will result in larger epoch number written in zk.
+
+        // 如果epoch和新的epoch是一致的，在controller选举期间我们可以安全地推断返回的epoch是和当前的broker能关联起来的，
+        // 因为我们知道zk的事务传输成功基于controller节点的校验。其他轮的controller选举会返回一个更大的epoch数，而这个数是写在zk中的
         if (epoch == newControllerEpoch)
           return (newControllerEpoch, stat.getVersion)
       }
@@ -314,6 +319,9 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
 
   /**
    * Get log configs that merge local configs with topic-level configs in zookeeper.
+   * 获取日志配置，并合并在zookeeper上的topic-level的配置
+   * 返回成功的集合和失败的集合，从代码容错能力来看，就应该分开返回，但在我的业务工程中很多情况都是一棍打死了
+   *
    * @param topics The topics to get log configs for.
    * @param config The local configs.
    * @return A tuple of two values:
@@ -760,6 +768,13 @@ class KafkaZkClient private[zk] (zooKeeperClient: ZooKeeperClient, isSecure: Boo
    * since the previous update may have succeeded (but the stored zkVersion no longer matches the expected one).
    * In this case, we will run the optionalChecker to further check if the previous write did indeed succeeded.
    */
+
+  /**
+   * 条件更新持久化的路径数据，返回（true, newVersion）如果它成功了，否则（比如路径不存在，当前版本和预期的不一致，etc）返回（false，ZkVersion.UnknownVersion）
+   * 当在条件更新过程中出现ConnectionLossException，zookeeper客户端建辉重试更新，由于之前的更新可能成功了将会返回失败，但是记录的zkVersion不再和预期的匹配
+   * 这种情况下，我们将回调optionalChecker做更进一步的检查，确认是否之前的写入真的成功了
+   */
+
   def conditionalUpdatePath(path: String, data: Array[Byte], expectVersion: Int,
                             optionalChecker: Option[(KafkaZkClient, String, Array[Byte]) => (Boolean,Int)] = None): (Boolean, Int) = {
 
@@ -1925,8 +1940,7 @@ object KafkaZkClient {
   // A helper function to transform a regular request into a MultiRequest
   // with the check on controller epoch znode zkVersion.
   // This is used for fencing zookeeper updates in controller.
-  // 辅助方法，通过检查控制器中的epoch znode zkVersion，将一个常规的request转换成MultiRequest
-  // 这个用来给绕开kafka控制器在zookeeper上的更新
+  // 辅助方法，将一个常规的request转换成MultiRequest，在请求前加上controller epoch的检查
   private def wrapRequestWithControllerEpochCheck(request: AsyncRequest, expectedControllerZkVersion: Int): MultiRequest = {
       val checkOp = CheckOp(ControllerEpochZNode.path, expectedControllerZkVersion)
       request match {
@@ -1945,6 +1959,7 @@ object KafkaZkClient {
   // ControllerMovedException will be thrown if the controller epoch
   // znode zkVersion check fails. This is used for fencing zookeeper
   // updates in controller.
+  // 辅助方法，将被转换出来的MultiRequest转回对应的返回类型，和wrapRequestWithControllerEpochCheck搭配使用
   private def unwrapResponseWithControllerEpochCheck(response: AsyncResponse): AsyncResponse = {
     response match {
       case MultiResponse(resultCode, _, ctx, zkOpResults, responseMetadata) =>
